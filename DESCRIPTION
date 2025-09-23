@@ -1,0 +1,27 @@
+Package: OBI
+Type: Package
+Title: Objective Bayesian Inference Tools
+Version: 0.1.0
+Authors@R: 
+    person("Enrique", "Achire Quispe", 
+           email = "tu_correo@ejemplo.com", 
+           role = c("aut", "cre"))
+Description: Tools for performing objective Bayesian inference in reliability 
+    and survival analysis. The package implements Markov Chain Monte Carlo (MCMC) 
+    algorithms for censored data, objective prior distributions (such as Jeffreys' prior), 
+    and functions for parameter estimation and model fitting. 
+    It is designed for researchers and practitioners interested in objective Bayesian 
+    methods for lifetime distributions.
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends: R (>= 4.0)
+Imports: 
+    MASS
+Suggests: 
+    knitr,
+    rmarkdown,
+    testthat
+VignetteBuilder: knitr
