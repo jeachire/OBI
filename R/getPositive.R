@@ -4,7 +4,8 @@
 #'
 #' @param dist A character string specifying the distribution name.
 #' Supported options include: \code{"normal"}, \code{"poisson"},
-#' \code{"exponential"}, \code{"gamma"}, and \code{"weibull"}.
+#' \code{"exponential"}, \code{"gamma"}, \code{"weibull"},
+#' \code{"generalized gamma"}, \code{"lognormal"}, and \code{"loglogistic"}.
 #'
 #' @return A logical vector of length equal to the number of parameters
 #' of the specified distribution. Each element indicates whether the
@@ -16,13 +17,15 @@
 #' - \code{"poisson"}: parameter = lambda → \code{c(TRUE)}
 #' - \code{"exponential"}: parameter = rate → \code{c(TRUE)}
 #' - \code{"gamma"}: parameters = shape, rate → \code{c(TRUE, TRUE)}
-#' - \code{"weibull"}: parameters = shape, scale → \code{c(TRUE, TRUE)}
+#' - \code{"weibull"}: parameters = rate, shape → \code{c(TRUE, TRUE)}
+#' - \code{"generalized gamma"}: parameters = shape, rate, shape2 → \code{c(TRUE, TRUE, TRUE)}
+#' - \code{"lognormal"}: parameters = meanlog, variancelog → \code{c(FALSE, TRUE)}
+#' - \code{"loglogistic"}: parameters = scale, shape → \code{c(TRUE, TRUE)}
 #'
 #' If an unsupported distribution is provided, the function throws an error.
 #'
 #' @examples
 #' getPositive("normal")
-#' getPositive("gamma")
 #' getPositive("weibull")
 #'
 #' @export
@@ -40,7 +43,16 @@ getPositive <- function(dist) {
     # parameters: shape, rate
     return(c(TRUE, TRUE))
   } else if (dist == "weibull") {
-    # parameters: shape, scale
+    # parameters: rate, shape
+    return(c(TRUE, TRUE))
+  } else if (dist == "generalized gamma") {
+    # parameters: shape, rate, shape2
+    return(c(TRUE, TRUE, TRUE))
+  } else if (dist == "lognormal") {
+    # parameters: meanlog, variancelog
+    return(c(FALSE, TRUE))
+  } else if (dist == "loglogistic") {
+    # parameters: scale, shape
     return(c(TRUE, TRUE))
   } else {
     stop("Unsupported distribution in getPositive().")

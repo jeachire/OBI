@@ -9,7 +9,9 @@ getLogLikelihood(dist, x, delta = NULL)
 \arguments{
 \item{dist}{A character string specifying the parametric distribution.
 Supported options in the current implementation include:
-\code{"normal"}, \code{"poisson"}, and \code{"weibull"}.}
+\code{"normal"}, \code{"poisson"}, \code{"gamma"},
+\code{"weibull"}, \code{"generalized gamma"}, \code{"lognormal"},
+and \code{"loglogistic"}.}
 
 \item{x}{A numeric vector of data values (observed or censored).}
 
@@ -31,15 +33,39 @@ The generated log-likelihood function accounts for both observed and
 right-censored data:
 \itemize{
 \item For observed values (\code{delta = 1}), it uses the log-density.
-\item For censored values (\code{delta = 0}), it uses the log-survival function.
+\item For censored values (\code{delta = 0}), it uses the log-survival
+function, i.e., \eqn{\log S(x) = \log(1 - F(x))}.
 }
 
-Implemented distributions:
+\strong{Censoring convention for Poisson:}
+We use \emph{strict right-censoring}, so for censored counts the contribution is
+\eqn{P(Y > x) = 1 - F(x)} (in R: \code{ppois(x, lambda, lower.tail = FALSE)}).
+
+\strong{Implemented distributions and parameter orders:}
 \itemize{
-\item \code{"normal"}: parameters = mean, sd
-\item \code{"poisson"}: parameter = lambda
-\item \code{"weibull"}: parameters = shape, scale
+\item \code{"normal"}: parameters = \code{mean}, \code{variance}
+\item \code{"poisson"}: parameter = \code{lambda}
+\item \code{"weibull"}: parameters = \code{rate}, \code{shape}
+\item \code{"gamma"}: parameters = \code{shape}, \code{rate}
+\item \code{"generalized gamma"}: parameters = \code{alpha}, \code{beta}, \code{kappa}
+\item \code{"lognormal"}: parameters = \code{meanlog}, \code{variancelog}
+\item \code{"loglogistic"}: parameters = \code{scale}, \code{shape}
 }
+
+\strong{Generalized gamma (Stacy) used here:}
+With \eqn{\alpha>0}, \eqn{\beta>0}, \eqn{\kappa>0}, the density is
+\deqn{
+f(t \mid \alpha,\beta,\kappa) =
+\frac{\kappa \beta^{\kappa \alpha}}{\Gamma(\alpha)}\,
+t^{\kappa \alpha - 1}\exp\!\left[-(\beta t)^{\kappa}\right],\quad t>0.
+}
+The CDF is
+\deqn{
+F(t)=\frac{\gamma\!\left(\alpha,\ (\beta t)^{\kappa}\right)}{\Gamma(\alpha)}
+\;=\; \mathrm{pgamma}\!\left((\beta t)^{\kappa};\ \text{shape}=\alpha,\ \text{rate}=1\right),
+}
+so we implement \code{dggamma()} and \code{pggamma()} accordingly and use
+\code{pggamma(x, ..., lower.tail = FALSE, log.p = TRUE)} for censored terms.
 }
 \examples{
 # Example with fully observed Normal data
@@ -53,4 +79,15 @@ delta <- rbinom(10, size = 1, prob = 0.7)  # 70\% observed, 30\% censored
 loglik_fun <- getLogLikelihood("weibull", x = x, delta = delta)
 loglik_fun(theta = c(2, 1))
 
+# Example with generalized gamma (alpha, beta, kappa)
+set.seed(1)
+x <- rexp(20)  # solo para ejemplo; sustituye por tus datos
+delta <- rbinom(20, 1, 0.8)
+loglik_fun <- getLogLikelihood("generalized gamma", x = x, delta = delta)
+# theta = c(alpha, beta, kappa)
+loglik_fun(theta = c(2, 1, 1.5))
+
+}
+\seealso{
+dggamma, pggamma
 }

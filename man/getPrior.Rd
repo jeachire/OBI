@@ -7,57 +7,43 @@
 getPrior(dist, prior = "Jeffreys")
 }
 \arguments{
-\item{dist}{A character string specifying the parametric distribution.
-Supported options in the current implementation include:
-\code{"normal"}, \code{"poisson"}, and \code{"weibull"}.}
+\item{dist}{Character string for the parametric distribution.
+Supported options include: \code{"normal"}, \code{"poisson"}, \code{"gamma"},
+\code{"generalized gamma"}, \code{"weibull"}, \code{"lognormal"}, \code{"loglogistic"}.}
 
-\item{prior}{A character string or function specifying the prior distribution.
-Built-in options include:
-\code{"Jeffreys"} and \code{"uniform"} (case-sensitive).
-Alternatively, the user may provide a custom function returning the
-log-prior for a given parameter vector.}
+\item{prior}{Character string for the prior: \code{"Jeffreys"}, \code{"reference"}, \code{"MDI"};
+or a custom function returning a log-prior.}
 }
 \value{
-A function of the parameter vector \code{theta},
-which evaluates the log-prior density.
+A function of the parameter vector \code{theta} that evaluates the log-prior.
 }
 \description{
 Returns a function that computes the log-prior density
 for the parameters of a specified distribution under the chosen prior.
 }
 \details{
+Parameterizations (your conventions):
 \itemize{
-\item \code{dist = "normal"} with \code{prior = "Jeffreys"}:
-Returns a constant prior (log-prior = 0), assuming known variance.
-\item \code{dist = "poisson"} with \code{prior = "Jeffreys"}:
-\deqn{\pi(\lambda) \propto \lambda^{-1/2}}
-so the log-prior is \eqn{-0.5 \log(\lambda)}.
-\item \code{dist = "weibull"} with \code{prior = "Jeffreys"}:
-\deqn{\pi(\alpha, \beta) \propto (\alpha \beta)^{-1}}
-so the log-prior is \eqn{-\log(\alpha) - \log(\beta)}.
-\item \code{prior = "uniform"}:
-Returns a flat prior, i.e., constant log-prior = 0.
+\item \code{"normal"}: \code{theta = c(mean, variance)}
+\item \code{"poisson"}: \code{theta = lambda}
+\item \code{"weibull"}: \code{theta = c(rate, shape)}
+\item \code{"gamma"}: \code{theta = c(shape, rate)}
+\item \code{"generalized gamma"}: \code{theta = c(alpha, beta, kappa)}
+\item \code{"lognormal"}: \code{theta = c(meanlog, varlog)}
+\item \code{"loglogistic"}: \code{theta = c(scale, shape)}
 }
 
-If a custom prior is passed as a function, the function is returned
-directly without modification.
+If a custom prior function is provided, it is returned as-is.
+Some objective priors may lead to improper posteriors depending on the data.
 }
 \examples{
-# Jeffreys prior for Poisson distribution
-logprior <- getPrior(dist = "poisson", prior = "Jeffreys")
-logprior(theta = 3)
-
-# Jeffreys prior for Weibull distribution
+# Jeffreys prior for Weibull
 logprior <- getPrior(dist = "weibull", prior = "Jeffreys")
 logprior(theta = c(1.5, 2))
 
-# Uniform prior for Normal distribution
-logprior <- getPrior(dist = "normal", prior = "uniform")
-logprior(theta = c(0, 1))
-
-# Custom user-defined prior
-myPrior <- function(theta) -sum(theta^2)  # log of a Gaussian-like prior
-logprior <- getPrior(dist = "custom", prior = myPrior)
+# Custom prior
+myPrior <- function(theta) -sum(theta^2)
+logprior <- getPrior(dist = "weibull", prior = myPrior)
 logprior(theta = c(1, 2))
 
 }

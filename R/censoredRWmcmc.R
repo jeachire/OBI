@@ -36,23 +36,25 @@
 #' for positive parameters is automatically included.
 #'
 #' @examples
-#' # Simulated censored data (Weibull)
+#' # Simulated censored data (Weibull; parameterization = (rate, shape))
 #' set.seed(123)
 #' n <- 30
-#' t.true <- rweibull(n, shape=2, scale=1)
+#' shape <- 2; rate <- 1
+#' t.true <- rweibull(n, shape = shape, scale = 1/rate)
 #' censor.limit <- 1.2
 #' x <- pmin(t.true, censor.limit)
 #' delta <- as.integer(t.true <= censor.limit)
 #'
-#' # Log-posterior (up to a constant)
+#' # Log-posterior (up to a constant) in (rate, shape)
 #' logPost <- function(theta, t.imp){
-#'   shape <- theta[1]; scale <- theta[2]
-#'   sum(dweibull(t.imp, shape=shape, scale=scale, log=TRUE))
+#'   rate  <- theta[1]; shape <- theta[2]
+#'   scale <- 1 / rate
+#'   sum(dweibull(t.imp, shape = shape, scale = scale, log = TRUE))
 #' }
 #'
 #' out <- censoredRWmcmc(
 #'   x = x, delta = delta, dist = "weibull",
-#'   logPost = logPost, theta.init = c(1,1),
+#'   logPost = logPost, theta.init = c(rate = 1, shape = 2),
 #'   positive = c(TRUE, TRUE), n.iter = 2000
 #' )
 #' str(out$summary)

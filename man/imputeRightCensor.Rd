@@ -2,54 +2,35 @@
 % Please edit documentation in R/imputeRightCensor.R
 \name{imputeRightCensor}
 \alias{imputeRightCensor}
-\title{Impute Right-Censored Data}
+\title{Impute right-censored data via inverse-CDF from the conditional survival}
 \usage{
-imputeRightCensor(x, delta, theta, dist = "weibull")
+imputeRightCensor(x, delta, theta, dist)
 }
 \arguments{
-\item{x}{A numeric vector of observed or censored survival times.}
+\item{x}{Numeric vector of observed/censored values.}
 
-\item{delta}{A numeric vector of the same length as \code{x},
-indicating the censoring status of each observation:
-\code{1} for observed values and \code{0} for right-censored values.}
+\item{delta}{Numeric vector (same length as \code{x}): 1 = observed, 0 = right-censored.}
 
-\item{theta}{A numeric vector of distribution parameters.
-The length and interpretation depend on \code{dist}:
+\item{theta}{Numeric parameter vector (see Details for each \code{dist}).}
+
+\item{dist}{One of:
 \itemize{
-\item \code{"weibull"}: \code{c(shape, scale)}
-\item \code{"exponential"}: \code{c(rate)}
+\item \code{"normal"}: \code{theta = c(mean, variance)}
+\item \code{"poisson"}: \code{theta = lambda}
+\item \code{"weibull"}: \code{theta = c(rate, shape)}  (scale = 1/rate)
+\item \code{"gamma"}: \code{theta = c(shape, rate)}
+\item \code{"generalized gamma"}: \code{theta = c(alpha, beta, kappa)}
+\item \code{"lognormal"}: \code{theta = c(meanlog, varlog)}
+\item \code{"loglogistic"}: \code{theta = c(scale, shape)}
 }}
-
-\item{dist}{A character string specifying the distribution.
-Supported options are \code{"weibull"} and \code{"exponential"}.}
 }
 \value{
-A numeric vector of the same length as \code{x}, where censored
-observations (\code{delta = 0}) are replaced by random imputations
-drawn from the conditional distribution, and observed values remain unchanged.
+Numeric vector of imputations with observed entries unchanged.
 }
 \description{
-Imputes right-censored observations from a specified
-parametric distribution, using random draws from the conditional
-survival distribution.
+Impute right-censored data via inverse-CDF from the conditional survival
 }
 \details{
-\itemize{
-\item For censored observations, the imputation is drawn from the
-conditional distribution of the survival time given that it
-exceeds the censoring time.
-\item For uncensored observations, the original values are preserved.
-}
-
-The imputation is performed using the inversion method with random uniforms.
-}
-\examples{
-set.seed(123)
-# Example with Weibull distribution
-x <- c(2, 5, 7, 3)
-delta <- c(1, 0, 1, 0)  # two censored observations
-theta <- c(shape = 2, scale = 3)
-imputeRightCensor(x, delta, theta, dist = "weibull")
-
-
+For each censored value \eqn{c}, draws \eqn{U \sim \mathrm{Unif}(F(c),1)} and returns
+\eqn{F^{-1}(U)} of the chosen model (strict right-censoring, i.e., \eqn{T>c}).
 }

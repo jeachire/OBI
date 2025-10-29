@@ -2,7 +2,7 @@
 % Please edit documentation in R/fitBayes.R
 \name{fitBayes}
 \alias{fitBayes}
-\title{Bayesian Fit of Parametric Lifetime Distributions}
+\title{Bayesian Fit of Parametric Lifetime Distributions (with optional right-censoring)}
 \usage{
 fitBayes(
   x,
@@ -12,70 +12,143 @@ fitBayes(
   method = "MCMC",
   n.iter = 5000,
   burnin = 1000,
-  thin = 1
+  thin = 1,
+  verbose = TRUE
 )
 }
 \arguments{
-\item{x}{Numeric vector. Observed data (event times or counts).}
+\item{x}{Numeric vector of data (event times or counts). May include censored observations.}
 
-\item{dist}{Character string. Distribution family to fit.
-Supported options: \code{"normal"}, \code{"poisson"}, \code{"gamma"},
-\code{"exponential"}, \code{"weibull"}.}
+\item{dist}{Character string naming the distribution. Supported options:
+\itemize{
+\item \code{"normal"}: \code{theta = c(mean, variance)}
+\item \code{"poisson"}: \code{theta = lambda}
+\item \code{"exponential"}: \code{theta = c(rate)}
+\item \code{"weibull"}: \code{theta = c(rate, shape)} \emph{(note: base R uses \code{(shape, scale)};
+internally \code{scale = 1/rate})}
+\item \code{"gamma"}: \code{theta = c(shape, rate)}
+\item \code{"generalized gamma"} (Stacy): \code{theta = c(alpha, beta, kappa)}
+\item \code{"lognormal"}: \code{theta = c(meanlog, varlog)} \emph{(so \code{sdlog = sqrt(varlog)})}
+\item \code{"loglogistic"}: \code{theta = c(scale, shape)}
+}}
 
-\item{delta}{Integer or logical vector of the same length as \code{x}.
-Censoring indicator: \code{1} for observed values, \code{0} for right-censored.
-If \code{NULL}, all observations are assumed to be uncensored.}
+\item{delta}{Optional numeric/logical vector the same length as \code{x} with censoring indicators:
+\code{1} for observed events, \code{0} for right-censored. If \code{NULL}, all observations are treated as observed.}
 
-\item{prior}{Character string or function. Prior distribution to use.
-Built-in options: \code{"Jeffreys"}, \code{"Reference"}, \code{"MDI"}, \code{"Uniform"}.
-Alternatively, the user may provide a custom prior function.}
+\item{prior}{Prior choice for \code{theta}. Either a character string naming a built-in objective prior
+(e.g., \code{"Jeffreys"}, \code{"reference"}, \code{"MDI"})—handled internally by \code{getPrior()}—or a user-supplied
+function returning a log-prior in \code{theta}-space.}
 
-\item{method}{Character string. MCMC method to use.
-\code{"MCMC"} runs a random walk Metropolis-Hastings;
-\code{"MCMC_I"} runs Metropolis-Hastings with imputation of right-censored data.}
+\item{method}{Character string. Sampling method:
+\itemize{
+\item \code{"MCMC"} – standard random-walk MH on the transformed parameter space.
+\item \code{"MCMC_I"} – MH with right-censoring imputation (data augmentation) at each iteration.
+}}
 
-\item{n.iter}{Integer. Number of total MCMC iterations (default 5000).}
+\item{n.iter}{Integer. Total number of MCMC iterations (default \code{5000}).}
 
-\item{burnin}{Integer. Number of burn-in iterations (default 1000).}
+\item{burnin}{Integer. Number of initial iterations to discard (default \code{1000}).}
 
-\item{thin}{Integer. Thinning interval, i.e., keep every \code{thin}-th sample (default 1).}
+\item{thin}{Integer. Keep every \code{thin}-th draw (default \code{1}).}
+
+\item{verbose}{Logical; if \code{TRUE}, prints basic initialization info (default \code{TRUE}).}
 }
 \value{
-A list with the following elements:
+A list with components:
 \describe{
-\item{chain}{Matrix of sampled parameter values after burn-in and thinning.}
-\item{summary}{Data frame with posterior mean, SD, median, and quantiles (2.5\\%, 25\\%, 75\\%, 97.5\\%).}
-\item{acc.rate}{Acceptance rate of the sampler.}
-\item{call}{The matched call.}
+\item{\code{chain}}{Matrix of posterior draws for \code{theta} (after burn-in and thinning).}
+\item{\code{summary}}{Data frame with posterior mean, SD, median, and central quantiles (2.5\\%, 25\\%, 75\\%, 97.5\\%).}
+\item{\code{acc.rate}}{Overall Metropolis–Hastings acceptance rate.}
+\item{\code{theta_mle}}{Frequentist MLE used for initialization (on the natural \code{theta}-scale).}
+\item{\code{Sigma_init_phi}}{Initial proposal covariance on the transformed scale (inverse Hessian at the MLE when available).}
+\item{\code{call}}{Matched call.}
 }
 }
 \description{
-Fits a parametric distribution to (possibly censored) data under an objective prior,
-and samples from the posterior distribution using MCMC. The maximum likelihood
-estimator (MLE) is computed and used as the starting value for the MCMC sampler.
+Fits parametric lifetime models under an objective (or user-chosen) prior by
+constructing the log-likelihood and log-prior, then running a Metropolis–Hastings
+MCMC sampler. When right-censored data are present, the function can perform
+data augmentation by imputing censored observations at each MCMC iteration.
+Returns posterior draws, posterior summaries, and a frequentist MLE used for initialization.
 }
 \details{
-The function automatically determines which parameters are restricted to the
-positive domain, applies a log-transformation where needed, and adjusts the
-posterior with the Jacobian. For censored data, the \code{"MCMC_I"} method
-imputes censored values at each iteration.
+\strong{Likelihood and prior:}
+The function builds a log-likelihood via \code{getLogLikelihood(dist, x, delta)} and a log-prior via
+\code{getPrior(dist, prior)} under the parameterizations listed in \emph{dist}.
+
+\strong{Transformations and Jacobian:}
+Parameters restricted to \((0,\infty)\) are automatically mapped to the real line through a log-transform.
+The sampler accounts for the change of variables by adding the log-Jacobian
+\eqn{\sum_{j:\,\theta_j>0}\log(\theta_j)} to the target density.
+
+\strong{Censoring and data augmentation (\code{method = "MCMC_I"}):}
+For right-censored observations (\code{delta = 0}), the algorithm imputes at each iteration from
+the conditional distribution \eqn{T \mid T > c} using inverse-CDF sampling. The updated complete data are then
+used in the MH step. Implementations rely only on \pkg{stats} functions (and simple helpers for log-logistic
+and generalized gamma).
+
+\strong{Initialization:}
+The sampler is initialized at a frequentist MLE obtained by optimizing the log-likelihood on the transformed scale.
+The inverse observed Hessian at the MLE is used as the default proposal covariance on the transformed scale, with
+fallbacks if the Hessian is not numerically invertible.
+
+\strong{Parameterizations (summary):}
+\tabular{ll}{
+Normal \tab \code{(mean, variance)} \cr
+Poisson \tab \code{lambda} \cr
+Exponential \tab \code{(rate)} \cr
+Weibull \tab \code{(rate, shape)} \; (\code{scale = 1/rate} for base R calls) \cr
+Gamma \tab \code{(shape, rate)} \cr
+Generalized gamma (Stacy) \tab \code{(alpha, beta, kappa)} with \eqn{Y = (\beta T)^\kappa \sim \mathrm{Gamma}(\alpha, 1)} \cr
+Lognormal \tab \code{(meanlog, varlog)} \cr
+Log-logistic \tab \code{(scale, shape)}
+}
+
+\strong{Priors:}
+Built-in objective priors (Jeffreys, reference, MDI) follow the package’s documented conventions and may be
+improper; posterior propriety depends on the data and model. The user may supply a custom log-prior function
+if desired.
+}
+\note{
+Be mindful of parameterizations. In particular, \code{weibull} uses \code{(rate, shape)} in this package
+and converts to base R’s \code{(shape, scale)} internally via \code{scale = 1/rate}.
+Some objective priors are improper; ensure posterior propriety for your dataset/model.
 }
 \examples{
-## Example: Fit a Weibull distribution with right censoring
+\dontrun{
+## Example: Weibull with right-censoring, objective prior, MH with imputation
 set.seed(123)
-n <- 40
-t.true <- rweibull(n, shape=2, scale=1)
-censor.limit <- 1.5
-x <- pmin(t.true, censor.limit)
-delta <- as.integer(t.true <= censor.limit)
+n <- 50
+shape <- 2
+rate  <- 1                   # scale = 1 / rate = 1
+t_true <- rweibull(n, shape = shape, scale = 1 / rate)
+c_lim  <- 1.2
+x      <- pmin(t_true, c_lim)
+delta  <- as.integer(t_true <= c_lim)  # 1 = observed, 0 = censored
 
-# Fit model
 fit <- fitBayes(
-  x = x, dist = "weibull", delta = delta,
-  prior = "Jeffreys", method = "MCMC_I",
-  n.iter = 2000, burnin = 500
+  x = x,
+  dist = "weibull",                   # parameterization: theta = c(rate, shape)
+  delta = delta,
+  prior = "Jeffreys",
+  method = "MCMC_I",                  # impute censored data each iteration
+  n.iter = 4000, burnin = 1000, thin = 2
 )
 
 fit$summary
+head(fit$chain)
+fit$acc.rate
+fit$theta_mle
+}
 
+}
+\references{
+Bernardo, J. M., & Smith, A. F. M. (2000). \emph{Bayesian Theory}. Wiley.
+Berger, J. O., Bernardo, J. M., & Sun, D. (2009). The formal definition of reference priors.
+\emph{Annals of Statistics}, 37(2), 905–938.
+Kleiber, C., & Kotz, S. (2003). \emph{Statistical Size Distributions in Economics and Actuarial Sciences}. Wiley.
+}
+\seealso{
+\code{\link{getLogLikelihood}}, \code{\link{getPrior}}, \code{\link{imputeRightCensor}},
+\code{\link{logRWmcmc}}, \code{\link{censoredRWmcmc}}
 }

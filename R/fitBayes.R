@@ -1,134 +1,282 @@
-#' Bayesian Fit of Parametric Lifetime Distributions
+#' @title Bayesian Fit of Parametric Lifetime Distributions (with optional right-censoring)
 #'
-#' Fits a parametric distribution to (possibly censored) data under an objective prior,
-#' and samples from the posterior distribution using MCMC. The maximum likelihood
-#' estimator (MLE) is computed and used as the starting value for the MCMC sampler.
+#' @description
+#' Fits parametric lifetime models under an objective (or user-chosen) prior by
+#' constructing the log-likelihood and log-prior, then running a Metropolis–Hastings
+#' MCMC sampler. When right-censored data are present, the function can perform
+#' data augmentation by imputing censored observations at each MCMC iteration.
+#' Returns posterior draws, posterior summaries, and a frequentist MLE used for initialization.
 #'
-#' @param x Numeric vector. Observed data (event times or counts).
-#' @param dist Character string. Distribution family to fit.
-#'   Supported options: \code{"normal"}, \code{"poisson"}, \code{"gamma"},
-#'   \code{"exponential"}, \code{"weibull"}.
-#' @param delta Integer or logical vector of the same length as \code{x}.
-#'   Censoring indicator: \code{1} for observed values, \code{0} for right-censored.
-#'   If \code{NULL}, all observations are assumed to be uncensored.
-#' @param prior Character string or function. Prior distribution to use.
-#'   Built-in options: \code{"Jeffreys"}, \code{"Reference"}, \code{"MDI"}, \code{"Uniform"}.
-#'   Alternatively, the user may provide a custom prior function.
-#' @param method Character string. MCMC method to use.
-#'   \code{"MCMC"} runs a random walk Metropolis-Hastings;
-#'   \code{"MCMC_I"} runs Metropolis-Hastings with imputation of right-censored data.
-#' @param n.iter Integer. Number of total MCMC iterations (default 5000).
-#' @param burnin Integer. Number of burn-in iterations (default 1000).
-#' @param thin Integer. Thinning interval, i.e., keep every \code{thin}-th sample (default 1).
-#'
-#' @return A list with the following elements:
-#' \describe{
-#'   \item{chain}{Matrix of sampled parameter values after burn-in and thinning.}
-#'   \item{summary}{Data frame with posterior mean, SD, median, and quantiles (2.5\%, 25\%, 75\%, 97.5\%).}
-#'   \item{acc.rate}{Acceptance rate of the sampler.}
-#'   \item{call}{The matched call.}
+#' @param x Numeric vector of data (event times or counts). May include censored observations.
+#' @param dist Character string naming the distribution. Supported options:
+#' \itemize{
+#'   \item \code{"normal"}: \code{theta = c(mean, variance)}
+#'   \item \code{"poisson"}: \code{theta = lambda}
+#'   \item \code{"exponential"}: \code{theta = c(rate)}
+#'   \item \code{"weibull"}: \code{theta = c(rate, shape)} \emph{(note: base R uses \code{(shape, scale)};
+#'         internally \code{scale = 1/rate})}
+#'   \item \code{"gamma"}: \code{theta = c(shape, rate)}
+#'   \item \code{"generalized gamma"} (Stacy): \code{theta = c(alpha, beta, kappa)}
+#'   \item \code{"lognormal"}: \code{theta = c(meanlog, varlog)} \emph{(so \code{sdlog = sqrt(varlog)})}
+#'   \item \code{"loglogistic"}: \code{theta = c(scale, shape)}
 #' }
+#' @param delta Optional numeric/logical vector the same length as \code{x} with censoring indicators:
+#' \code{1} for observed events, \code{0} for right-censored. If \code{NULL}, all observations are treated as observed.
+#' @param prior Prior choice for \code{theta}. Either a character string naming a built-in objective prior
+#' (e.g., \code{"Jeffreys"}, \code{"reference"}, \code{"MDI"})—handled internally by \code{getPrior()}—or a user-supplied
+#' function returning a log-prior in \code{theta}-space.
+#' @param method Character string. Sampling method:
+#' \itemize{
+#'   \item \code{"MCMC"} – standard random-walk MH on the transformed parameter space.
+#'   \item \code{"MCMC_I"} – MH with right-censoring imputation (data augmentation) at each iteration.
+#' }
+#' @param n.iter Integer. Total number of MCMC iterations (default \code{5000}).
+#' @param burnin Integer. Number of initial iterations to discard (default \code{1000}).
+#' @param thin Integer. Keep every \code{thin}-th draw (default \code{1}).
+#' @param verbose Logical; if \code{TRUE}, prints basic initialization info (default \code{TRUE}).
 #'
 #' @details
-#' The function automatically determines which parameters are restricted to the
-#' positive domain, applies a log-transformation where needed, and adjusts the
-#' posterior with the Jacobian. For censored data, the \code{"MCMC_I"} method
-#' imputes censored values at each iteration.
+#' \strong{Likelihood and prior:}
+#' The function builds a log-likelihood via \code{getLogLikelihood(dist, x, delta)} and a log-prior via
+#' \code{getPrior(dist, prior)} under the parameterizations listed in \emph{dist}.
+#'
+#' \strong{Transformations and Jacobian:}
+#' Parameters restricted to \((0,\infty)\) are automatically mapped to the real line through a log-transform.
+#' The sampler accounts for the change of variables by adding the log-Jacobian
+#' \eqn{\sum_{j:\,\theta_j>0}\log(\theta_j)} to the target density.
+#'
+#' \strong{Censoring and data augmentation (\code{method = "MCMC_I"}):}
+#' For right-censored observations (\code{delta = 0}), the algorithm imputes at each iteration from
+#' the conditional distribution \eqn{T \mid T > c} using inverse-CDF sampling. The updated complete data are then
+#' used in the MH step. Implementations rely only on \pkg{stats} functions (and simple helpers for log-logistic
+#' and generalized gamma).
+#'
+#' \strong{Initialization:}
+#' The sampler is initialized at a frequentist MLE obtained by optimizing the log-likelihood on the transformed scale.
+#' The inverse observed Hessian at the MLE is used as the default proposal covariance on the transformed scale, with
+#' fallbacks if the Hessian is not numerically invertible.
+#'
+#' \strong{Parameterizations (summary):}
+#' \tabular{ll}{
+#'   Normal \tab \code{(mean, variance)} \cr
+#'   Poisson \tab \code{lambda} \cr
+#'   Exponential \tab \code{(rate)} \cr
+#'   Weibull \tab \code{(rate, shape)} \; (\code{scale = 1/rate} for base R calls) \cr
+#'   Gamma \tab \code{(shape, rate)} \cr
+#'   Generalized gamma (Stacy) \tab \code{(alpha, beta, kappa)} with \eqn{Y = (\beta T)^\kappa \sim \mathrm{Gamma}(\alpha, 1)} \cr
+#'   Lognormal \tab \code{(meanlog, varlog)} \cr
+#'   Log-logistic \tab \code{(scale, shape)}
+#' }
+#'
+#' \strong{Priors:}
+#' Built-in objective priors (Jeffreys, reference, MDI) follow the package’s documented conventions and may be
+#' improper; posterior propriety depends on the data and model. The user may supply a custom log-prior function
+#' if desired.
+#'
+#' @return A list with components:
+#' \describe{
+#'   \item{\code{chain}}{Matrix of posterior draws for \code{theta} (after burn-in and thinning).}
+#'   \item{\code{summary}}{Data frame with posterior mean, SD, median, and central quantiles (2.5\%, 25\%, 75\%, 97.5\%).}
+#'   \item{\code{acc.rate}}{Overall Metropolis–Hastings acceptance rate.}
+#'   \item{\code{theta_mle}}{Frequentist MLE used for initialization (on the natural \code{theta}-scale).}
+#'   \item{\code{Sigma_init_phi}}{Initial proposal covariance on the transformed scale (inverse Hessian at the MLE when available).}
+#'   \item{\code{call}}{Matched call.}
+#' }
 #'
 #' @examples
-#' ## Example: Fit a Weibull distribution with right censoring
+#' \dontrun{
+#' ## Example: Weibull with right-censoring, objective prior, MH with imputation
 #' set.seed(123)
-#' n <- 40
-#' t.true <- rweibull(n, shape=2, scale=1)
-#' censor.limit <- 1.5
-#' x <- pmin(t.true, censor.limit)
-#' delta <- as.integer(t.true <= censor.limit)
+#' n <- 50
+#' shape <- 2
+#' rate  <- 1                   # scale = 1 / rate = 1
+#' t_true <- rweibull(n, shape = shape, scale = 1 / rate)
+#' c_lim  <- 1.2
+#' x      <- pmin(t_true, c_lim)
+#' delta  <- as.integer(t_true <= c_lim)  # 1 = observed, 0 = censored
 #'
-#' # Fit model
 #' fit <- fitBayes(
-#'   x = x, dist = "weibull", delta = delta,
-#'   prior = "Jeffreys", method = "MCMC_I",
-#'   n.iter = 2000, burnin = 500
+#'   x = x,
+#'   dist = "weibull",                   # parameterization: theta = c(rate, shape)
+#'   delta = delta,
+#'   prior = "Jeffreys",
+#'   method = "MCMC_I",                  # impute censored data each iteration
+#'   n.iter = 4000, burnin = 1000, thin = 2
 #' )
 #'
 #' fit$summary
+#' head(fit$chain)
+#' fit$acc.rate
+#' fit$theta_mle
+#' }
+#'
+#' @seealso \code{\link{getLogLikelihood}}, \code{\link{getPrior}}, \code{\link{imputeRightCensor}},
+#' \code{\link{logRWmcmc}}, \code{\link{censoredRWmcmc}}
+#'
+#' @note
+#' Be mindful of parameterizations. In particular, \code{weibull} uses \code{(rate, shape)} in this package
+#' and converts to base R’s \code{(shape, scale)} internally via \code{scale = 1/rate}.
+#' Some objective priors are improper; ensure posterior propriety for your dataset/model.
+#'
+#' @references
+#' Bernardo, J. M., & Smith, A. F. M. (2000). \emph{Bayesian Theory}. Wiley.
+#' Berger, J. O., Bernardo, J. M., & Sun, D. (2009). The formal definition of reference priors.
+#' \emph{Annals of Statistics}, 37(2), 905–938.
+#' Kleiber, C., & Kotz, S. (2003). \emph{Statistical Size Distributions in Economics and Actuarial Sciences}. Wiley.
 #'
 #' @export
 fitBayes <- function(x, dist, delta = NULL, prior = "Jeffreys",
-                     method = "MCMC", n.iter = 5000, burnin=1000,
-                     thin=1) {
+                     method = "MCMC", n.iter = 5000, burnin = 1000, thin = 1,
+                     verbose = TRUE) {
 
-  # 1. Validaciones
-  stopifnot(is.numeric(x))
-  stopifnot(dist %in% c("normal","poisson","gamma","exponential","weibull"))
+  ## ---------- 0) Basic checks ----------
+  if (!is.numeric(x)) stop("'x' must be numeric.")
+  if (is.null(delta)) delta <- rep(1L, length(x))
+  if (length(delta) != length(x)) stop("'delta' must have the same length as 'x'.")
 
-  if(is.null(delta)) delta <- rep(1, length(x))  # todos observados si no se indica censura
-  stopifnot(length(delta) == length(x))
+  supported <- c("normal","poisson","gamma","exponential","weibull",
+                 "loglogistic","lognormal","generalized gamma")
+  if (!dist %in% supported) stop("Unsupported distribution: ", dist)
 
-  # 2. Log-verosimilitud (adaptada para censura)
-  loglik <- getLogLikelihood(dist, x, delta)
-  positive <- getPositive(dist)
+  ## ---------- 1) Build log-likelihood and prior (on theta / natural scale) ----------
+  loglik_fun <- getLogLikelihood(dist, x, delta)     # returns function(theta)
+  positive   <- getPositive(dist)                    # logical vector by your conventions
+  p <- length(positive)
 
-  # 3. Prior objetiva
-  priorFunc <- getPrior(dist, prior)
+  prior_fun_user <- getPrior(dist, prior)            # returns log-prior function(theta)
+  if (!is.function(prior_fun_user)) stop("getPrior must return a function.")
 
-  # 4. Posterior
-  logpost <- function(theta) loglik(theta) + priorFunc(theta)
+  # If you keep the heuristic, leave as is; otherwise assume it's a log-prior already:
+  prior_fun_log <- function(theta) prior_fun_user(theta)
 
-  logPost <- function(theta, t) {
-    logLik <- getLogLikelihood(dist, t)   # logLik ahora es una función de theta
-    logLik(theta) + priorFunc(theta)      # evaluamos theta
+  ## ---------- 2) Transformations phi <-> theta ----------
+  idx_pos <- which(positive)
+  idx_un  <- which(!positive)
+
+  to_phi <- function(theta) {
+    phi <- numeric(p)
+    if (length(idx_pos)) phi[idx_pos] <- log(theta[idx_pos])
+    if (length(idx_un))  phi[idx_un]  <- theta[idx_un]
+    phi
+  }
+  from_phi <- function(phi) {
+    theta <- numeric(p)
+    if (length(idx_pos)) theta[idx_pos] <- exp(phi[idx_pos])
+    if (length(idx_un))  theta[idx_un]  <- phi[idx_un]
+    theta
+  }
+  logJ_phi <- function(phi) {
+    if (!length(idx_pos)) return(0)
+    sum(phi[idx_pos])  # since theta_pos = exp(phi_pos)
   }
 
+  ## ---------- 3) MLE (in phi-space) for initialization ----------
+  opt <- tryCatch(
+    optim(par = rep(0, p),
+          fn = function(phi) {
+            th <- from_phi(phi)
+            val <- loglik_fun(th)
+            if (!is.finite(val)) return(1e12)  # crude guard
+            -val
+          },
+          method = "BFGS", hessian = TRUE, control = list(maxit = 1000)),
+    error = function(e) NULL
+  )
 
+  if (!is.null(opt) && is.numeric(opt$par)) {
+    phi_mle    <- opt$par
+    theta_mle  <- from_phi(phi_mle)
+    Sigma_phi0 <- tryCatch(solve(opt$hessian), error = function(e) diag(1e-3, p))
+  } else {
+    phi_mle    <- rep(0, p)                   # theta = 1 for positives, 0 for unbounded
+    theta_mle  <- from_phi(phi_mle)
+    Sigma_phi0 <- diag(0.1, p)
+    warning("optim failed to find MLE; using neutral initial values.")
+  }
+  if (verbose) message("Initial theta (natural): ", paste0(round(theta_mle, 4), collapse = ", "))
 
-  # 5. Theta inicial
-  p <- length(positive)
-  theta0 <- ifelse(positive, 1, 0)
-  lower <- ifelse(positive, 1e-6, -Inf)
-  upper <- rep(Inf,p)
-  theta.init <- optim(par = theta0,
-               fn = function(theta) -loglik(theta),
-               method = "L-BFGS-B",
-               lower = lower,
-               upper = upper)$par
+  ## ---------- 4) Define targets for samplers ----------
+  # (a) Target on THETA: loglik + logprior (NO Jacobian here)
+  logPost_theta <- function(theta) {
+    ll <- loglik_fun(theta)
+    lp <- prior_fun_log(theta)
+    if (!is.finite(ll) || !is.finite(lp)) return(-Inf)
+    ll + lp
+  }
 
-  # 6. Muestra posterior
-  if(method == "MCMC"){
-    postSample <- logRWmcmc(logPost = logpost,
-                            theta.init = theta.init,
-                            positive = positive,
-                            Sigma = NULL,
-                            n.iter = n.iter,
-                            burnin = burnin,
-                            thin = thin)
+  # (b) Target on PHI (if you want to sample directly in phi): add Jacobian
+  logPost_phi <- function(phi) {
+    theta <- from_phi(phi)
+    ll <- loglik_fun(theta); lp <- prior_fun_log(theta)
+    if (!is.finite(ll) || !is.finite(lp)) return(-Inf)
+    ll + lp + logJ_phi(phi)
+  }
 
-    } else if (method == "MCMC_I"){
-      postSample <- censoredRWmcmc(x = x,
-                              delta = delta,
-                              dist = dist,
-                              logPost = logPost,
-                              theta.init = theta.init,
-                              positive = positive,
-                              Sigma = NULL,
-                              n.iter = n.iter,
-                              burnin = burnin,
-                              thin = thin)
-    } else {
-      stop("Solo 'MCMC' y 'MCMC_I' está implementado actualmente.")
+  ## ---------- 5) Run sampler ----------
+  if (method == "MCMC") {
+    # Use generic RW sampler expecting a theta-target; it will add its own Jacobian
+    # (cleaner than passing a phi-target and turning Jacobians off).
+    res <- logRWmcmc(
+      logPost     = logPost_theta,        # target on theta
+      theta.init  = theta_mle,            # on theta scale
+      positive    = positive,             # so sampler knows which to log-transform
+      Sigma       = Sigma_phi0,           # proposal on phi-scale; logRWmcmc treats Sigma as on phi
+      n.iter      = n.iter, burnin = burnin, thin = thin
+    )
+    chain_theta <- res$chain
+    acc_rate    <- res$acc.rate
+
+  } else if (method == "MCMC_I") {
+    # Use censored sampler: it EXPECTS logPost(theta, t.imp) and does its own Jacobian/transform.
+    # So pass a theta-target (no Jacobian here); censoredRWmcmc adds it.
+    logPost_theta_with_timp <- function(theta, t.imp) {
+      # reuse your log-lik machinery by temporarily overriding x,delta? Better:
+      # Define a distribution-specific log-lik with t.imp directly:
+      # Here we call the original loglik_fun, which was created with x, delta;
+      # censoredRWmcmc imputes t.imp and passes it here -> we need a loglik that uses t.imp.
+      # Easiest: rebuild a new loglik for the same 'dist' but with x = t.imp and all observed (delta=1).
+      ll_fun_obs <- function(th) getLogLikelihood(dist, x = t.imp, delta = rep(1L, length(t.imp)))(th)
+      ll <- ll_fun_obs(theta)
+      lp <- prior_fun_log(theta)
+      if (!is.finite(ll) || !is.finite(lp)) return(-Inf)
+      ll + lp
     }
 
-  # 7. Estimaciones resumen
-  est <- postSample$summary
-  posterior <- postSample$chain
-  rate <- postSample$acc.rate
+    res <- censoredRWmcmc(
+      x          = x,
+      delta      = delta,
+      dist       = dist,
+      logPost    = logPost_theta_with_timp,  # target on theta (no Jacobian; sampler adds it)
+      theta.init = theta_mle,                # natural scale
+      positive   = positive,                 # sampler logs these internally
+      Sigma      = Sigma_phi0,               # proposal covariance on phi-scale
+      n.iter     = n.iter, burnin = burnin, thin = thin
+    )
+    chain_theta <- res$chain
+    acc_rate    <- res$acc.rate
 
-  # 8. Salida
-  return(list(
-    summary = est,
-    posterior = posterior,
-    rate = rate,
-    call = match.call()
-  ))
+  } else {
+    stop("Only 'MCMC' and 'MCMC_I' are implemented.")
+  }
+
+  ## ---------- 6) Summaries ----------
+  summary_df <- data.frame(
+    Mean   = apply(chain_theta, 2, mean),
+    SD     = apply(chain_theta, 2, sd),
+    Median = apply(chain_theta, 2, median),
+    Q2.5   = apply(chain_theta, 2, quantile, 0.025),
+    Q25    = apply(chain_theta, 2, quantile, 0.25),
+    Q75    = apply(chain_theta, 2, quantile, 0.75),
+    Q97.5  = apply(chain_theta, 2, quantile, 0.975),
+    check.names = FALSE
+  )
+
+  list(
+    chain          = chain_theta,
+    summary        = summary_df,
+    acc.rate       = acc_rate,
+    call           = match.call(),
+    theta_mle      = theta_mle,
+    Sigma_init_phi = Sigma_phi0
+  )
 }
-

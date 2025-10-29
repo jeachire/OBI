@@ -9,7 +9,8 @@ getPositive(dist)
 \arguments{
 \item{dist}{A character string specifying the distribution name.
 Supported options include: \code{"normal"}, \code{"poisson"},
-\code{"exponential"}, \code{"gamma"}, and \code{"weibull"}.}
+\code{"exponential"}, \code{"gamma"}, \code{"weibull"},
+\code{"generalized gamma"}, \code{"lognormal"}, and \code{"loglogistic"}.}
 }
 \value{
 A logical vector of length equal to the number of parameters
@@ -27,14 +28,16 @@ distribution are restricted to the positive real line \eqn{(0, \infty)}.
 \item \code{"poisson"}: parameter = lambda → \code{c(TRUE)}
 \item \code{"exponential"}: parameter = rate → \code{c(TRUE)}
 \item \code{"gamma"}: parameters = shape, rate → \code{c(TRUE, TRUE)}
-\item \code{"weibull"}: parameters = shape, scale → \code{c(TRUE, TRUE)}
+\item \code{"weibull"}: parameters = rate, shape → \code{c(TRUE, TRUE)}
+\item \code{"generalized gamma"}: parameters = shape, rate, shape2 → \code{c(TRUE, TRUE, TRUE)}
+\item \code{"lognormal"}: parameters = meanlog, variancelog → \code{c(FALSE, TRUE)}
+\item \code{"loglogistic"}: parameters = scale, shape → \code{c(TRUE, TRUE)}
 }
 
 If an unsupported distribution is provided, the function throws an error.
 }
 \examples{
 getPositive("normal")
-getPositive("gamma")
 getPositive("weibull")
 
 }
