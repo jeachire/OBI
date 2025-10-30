@@ -18,7 +18,7 @@ library(OBI)
 
 # Simulate censored Weibull data
 set.seed(123)
-x <- rweibull(100, shape = 0.8, scale = 2)     # lifetimes
+x <- rweibull(100, shape = 0.8, scale = 2)     # lifetimes rate=0.5
 censor <- runif(100, 0, 3)                     # censoring times
 delta <- as.numeric(x <= censor)               # censoring indicator
 x_cens <- pmin(x, censor)                      # observed data
@@ -39,6 +39,6 @@ fit <- fitBayes(
 fit$summary
 
 # Trace plot for parameters
-plot(fit$posterior[,1], type = "l", main = "Shape parameter")
-plot(fit$posterior[,2], type = "l", main = "Scale parameter")
+plot(fit$chain[,1], type = "l", main = "Rate parameter")
+plot(fit$chain[,2], type = "l", main = "Shape parameter")
 ````
