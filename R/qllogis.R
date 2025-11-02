@@ -1,4 +1,4 @@
-.qllogis <- function(p, scale, shape) {
+qllogis <- function(p, scale, shape) {
   eta <- scale; xi <- shape
   if (!(eta > 0 && xi > 0)) stop("Log-logistic requires scale > 0 and shape > 0.")
   # guard p in (0,1)

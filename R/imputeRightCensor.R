@@ -79,7 +79,7 @@ imputeRightCensor <- function(x, delta, theta, dist) {
       Fi <- min(Fi, one_minus)
       u  <- runif(1L, Fi, 1)
       # sample Y = Gamma^{-1}(u), then back-transform to T
-      t.imp[i] <- .qquantile_ggamma(u, alpha = alpha, beta = beta, kappa = kappa)
+      t.imp[i] <- qquantile_ggamma(u, alpha = alpha, beta = beta, kappa = kappa)
     }
 
   } else if (dist == "lognormal") {
@@ -102,7 +102,7 @@ imputeRightCensor <- function(x, delta, theta, dist) {
       Fi <- a / (1 + a)
       Fi <- min(Fi, one_minus)
       u  <- runif(1L, Fi, 1)
-      t.imp[i] <- .qllogis(u, scale = scale, shape = shape)
+      t.imp[i] <- qllogis(u, scale = scale, shape = shape)
     }
 
   } else {
