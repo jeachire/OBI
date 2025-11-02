@@ -18,11 +18,52 @@
 #'
 #' @export
 pggamma <- function(x, alpha, beta, kappa, lower.tail = TRUE, log.p = FALSE) {
-  if (!(alpha > 0 && beta > 0 && kappa > 0)) {
-    return(rep(if (log.p) -Inf else if (lower.tail) 0 else 1, length(x)))
-  }
+  # Coerción y longitud
   x <- as.numeric(x)
-  # t = (beta*x)^kappa; usa pmax(x,0) para robustez en x<=0
-  t <- (pmax(x, 0) * beta) ^ kappa
-  stats::pgamma(t, shape = alpha, rate = 1, lower.tail = lower.tail, log.p = log.p)
+  n <- length(x)
+
+  # Chequeo de dominio de parámetros: devolvemos NA del mismo largo
+  if (!(alpha > 0 && beta > 0 && kappa > 0)) {
+    return(rep(if (log.p) NaN else NA_real_, n))
+  }
+
+  # Vector resultado (CDF o log-CDF, según log.p)
+  res <- rep(NA_real_, n)
+
+  # Máscaras útiles
+  fin  <- is.finite(x)
+  neg0 <- fin & (x <= 0)        # incluye x == 0 y x < 0
+  pos  <- fin & (x > 0)
+  pinf <- is.infinite(x) & (x > 0)  # +Inf
+  ninf <- is.infinite(x) & (x < 0)  # -Inf (trátalo como x<=0)
+
+  # x <= 0  --> F(x)=0   ; S(x)=1
+  if (any(neg0 | ninf)) {
+    idx <- (neg0 | ninf)
+    if (log.p) {
+      res[idx] <- if (lower.tail) -Inf else 0     # log(0)=-Inf, log(1)=0
+    } else {
+      res[idx] <- if (lower.tail) 0    else 1
+    }
+  }
+
+  # x == +Inf  --> F(x)=1 ; S(x)=0
+  if (any(pinf)) {
+    if (log.p) {
+      res[pinf] <- if (lower.tail) 0   else -Inf  # log(1)=0, log(0)=-Inf
+    } else {
+      res[pinf] <- if (lower.tail) 1   else 0
+    }
+  }
+
+  # x > 0 y finito: usar transformación (beta*x)^kappa ~ Gamma(shape=alpha, rate=1)
+  if (any(pos)) {
+    t <- (beta * x[pos])^kappa
+    res[pos] <- stats::pgamma(t, shape = alpha, rate = 1,
+                              lower.tail = lower.tail, log.p = log.p)
+  }
+
+  # x = NA/NaN quedan como NA (propagan NA)
+  res
 }
+
