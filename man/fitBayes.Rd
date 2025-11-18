@@ -59,6 +59,8 @@ A list with components:
 \item{\code{chain}}{Matrix of posterior draws for \code{theta} (after burn-in and thinning).}
 \item{\code{summary}}{Data frame with posterior mean, SD, median, and central quantiles (2.5\\%, 25\\%, 75\\%, 97.5\\%).}
 \item{\code{acc.rate}}{Overall Metropolis–Hastings acceptance rate.}
+\item{\code{diagnostics}}{List with simple convergence diagnostics returned by the underlying
+Metropolis sampler (see \code{\link{logRWmcmc}} and \code{\link{censoredRWmcmc}}).}
 \item{\code{theta_mle}}{Frequentist MLE used for initialization (on the natural \code{theta}-scale).}
 \item{\code{Sigma_init_phi}}{Initial proposal covariance on the transformed scale (inverse Hessian at the MLE when available).}
 \item{\code{call}}{Matched call.}

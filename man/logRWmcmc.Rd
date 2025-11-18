@@ -38,27 +38,19 @@ A list with the following elements:
 \item{chain}{Matrix of sampled parameter values after burn-in and thinning.}
 \item{summary}{Data frame with posterior mean, SD, median, and quantiles (2.5\\%, 25\\%, 75\\%, 97.5\\%).}
 \item{acc.rate}{Acceptance rate of the sampler.}
+\item{diagnostics}{List with simple convergence diagnostics.}
+\item{chain.full}{(Optional) Full chain without burn-in/thinning (useful for debugging).}
 \item{call}{The matched call.}
 }
 }
 \description{
 Runs a Metropolis-Hastings MCMC algorithm with Gaussian random-walk proposals.
 Parameters constrained to be positive are handled via a log-transformation.
-The function also returns posterior summaries.
+The function also returns posterior summaries and basic convergence diagnostics.
 }
 \details{
 The algorithm uses a Gaussian random-walk proposal in the transformed
 parameter space. Parameters constrained to be positive are mapped via the
 logarithm to the real line. The Jacobian adjustment is automatically added
 to the log-posterior to ensure correct sampling.
-}
-\examples{
-# Example: Normal likelihood with known variance
-logPost <- function(theta){
-  mu <- theta[1]
-  sum(dnorm(rnorm(50, 2, 1), mean = mu, sd = 1, log = TRUE))
-}
-out <- logRWmcmc(logPost, theta.init = c(0), positive = c(FALSE), n.iter=2000)
-str(out$summary)
-
 }

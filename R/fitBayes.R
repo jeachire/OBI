@@ -78,6 +78,8 @@
 #'   \item{\code{chain}}{Matrix of posterior draws for \code{theta} (after burn-in and thinning).}
 #'   \item{\code{summary}}{Data frame with posterior mean, SD, median, and central quantiles (2.5\%, 25\%, 75\%, 97.5\%).}
 #'   \item{\code{acc.rate}}{Overall Metropolis–Hastings acceptance rate.}
+#'   \item{\code{diagnostics}}{List with simple convergence diagnostics returned by the underlying
+#'         Metropolis sampler (see \code{\link{logRWmcmc}} and \code{\link{censoredRWmcmc}}).}
 #'   \item{\code{theta_mle}}{Frequentist MLE used for initialization (on the natural \code{theta}-scale).}
 #'   \item{\code{Sigma_init_phi}}{Initial proposal covariance on the transformed scale (inverse Hessian at the MLE when available).}
 #'   \item{\code{call}}{Matched call.}
@@ -183,17 +185,39 @@ fitBayes <- function(x, dist, delta = NULL, prior = "Jeffreys",
     error = function(e) NULL
   )
 
-  if (!is.null(opt) && is.numeric(opt$par)) {
-    phi_mle    <- opt$par
-    theta_mle  <- from_phi(phi_mle)
-    Sigma_phi0 <- tryCatch(solve(opt$hessian), error = function(e) diag(1e-3, p))
+
+  # --- Robust initialization in phi-space (MLE/MAP) and Sigma_phi0 ---
+  if (!is.null(opt) && is.numeric(opt$par) && isTRUE(opt$convergence == 0)) {
+    # Use optimizer result
+    phi_mle   <- opt$par
+    theta_mle <- from_phi(phi_mle)
+
+    # Try to form proposal covariance from inverse Hessian; fallback to diag(0.2, p)
+    Sigma_phi0 <- tryCatch({
+      S <- solve(opt$hessian)
+      # Symmetrize defensively
+      S <- (S + t(S)) / 2
+      # If any non-finite elements, force fallback
+      if (any(!is.finite(S))) stop("non-finite covariance")
+      S
+    }, error = function(e) diag(0.2, p))
+
+    # Final guard: if still non-finite, fallback
+    if (any(!is.finite(Sigma_phi0))) {
+      Sigma_phi0 <- diag(0.2, p)
+    }
+
   } else {
-    phi_mle    <- rep(0, p)                   # theta = 1 for positives, 0 for unbounded
-    theta_mle  <- from_phi(phi_mle)
-    Sigma_phi0 <- diag(0.1, p)
-    warning("optim failed to find MLE; using neutral initial values.")
+    # No convergence or invalid opt -> neutral initialization
+    phi_mle   <- rep(0, p)        # from_phi will map positives -> 1, unbounded -> 0
+    theta_mle <- from_phi(phi_mle)
+    Sigma_phi0 <- diag(0.2, p)
+    warning("optim did not converge; using neutral initial values (phi=0, Sigma=0.2*I).")
   }
-  if (verbose) message("Initial theta (natural): ", paste0(round(theta_mle, 4), collapse = ", "))
+
+  if (verbose) message("Initial theta (natural): ",
+                       paste0(round(theta_mle, 4), collapse = ", "))
+
 
   ## ---------- 4) Define targets for samplers ----------
   # (a) Target on THETA: loglik + logprior (NO Jacobian here)
@@ -214,52 +238,44 @@ fitBayes <- function(x, dist, delta = NULL, prior = "Jeffreys",
 
   ## ---------- 5) Run sampler ----------
   if (method == "MCMC") {
-    # Use generic RW sampler expecting a theta-target; it will add its own Jacobian
-    # (cleaner than passing a phi-target and turning Jacobians off).
     res <- logRWmcmc(
-      logPost     = logPost_theta,        # target on theta
-      theta.init  = theta_mle,            # on theta scale
-      positive    = positive,             # so sampler knows which to log-transform
-      Sigma       = Sigma_phi0,           # proposal on phi-scale; logRWmcmc treats Sigma as on phi
+      logPost     = logPost_theta,
+      theta.init  = theta_mle,
+      positive    = positive,
+      Sigma       = Sigma_phi0,
       n.iter      = n.iter, burnin = burnin, thin = thin
     )
     chain_theta <- res$chain
     acc_rate    <- res$acc.rate
+    diag_obj    <- if (!is.null(res$diagnostics)) res$diagnostics else NULL
 
   } else if (method == "MCMC_I") {
-    # Use censored sampler: it EXPECTS logPost(theta, t.imp) and does its own Jacobian/transform.
-    # So pass a theta-target (no Jacobian here); censoredRWmcmc adds it.
-    logPost_theta_with_timp <- function(theta, t.imp) {
-      # reuse your log-lik machinery by temporarily overriding x,delta? Better:
-      # Define a distribution-specific log-lik with t.imp directly:
-      # Here we call the original loglik_fun, which was created with x, delta;
-      # censoredRWmcmc imputes t.imp and passes it here -> we need a loglik that uses t.imp.
-      # Easiest: rebuild a new loglik for the same 'dist' but with x = t.imp and all observed (delta=1).
-      ll_fun_obs <- function(th) getLogLikelihood(dist, x = t.imp, delta = rep(1L, length(t.imp)))(th)
-      ll <- ll_fun_obs(theta)
-      lp <- prior_fun_log(theta)
-      if (!is.finite(ll) || !is.finite(lp)) return(-Inf)
-      ll + lp
-    }
 
     res <- censoredRWmcmc(
       x          = x,
       delta      = delta,
       dist       = dist,
-      logPost    = logPost_theta_with_timp,  # target on theta (no Jacobian; sampler adds it)
-      theta.init = theta_mle,                # natural scale
-      positive   = positive,                 # sampler logs these internally
-      Sigma      = Sigma_phi0,               # proposal covariance on phi-scale
+      logPost    = logPost_theta_with_timp,
+      theta.init = theta_mle,
+      positive   = positive,
+      Sigma      = Sigma_phi0,
       n.iter     = n.iter, burnin = burnin, thin = thin
     )
     chain_theta <- res$chain
     acc_rate    <- res$acc.rate
+    diag_obj    <- if (!is.null(res$diagnostics)) res$diagnostics else NULL
 
   } else {
     stop("Only 'MCMC' and 'MCMC_I' are implemented.")
   }
 
   ## ---------- 6) Summaries ----------
+
+  if (verbose && !is.null(diag_obj) && !isTRUE(diag_obj$converged)) {
+    warning("MCMC diagnostics indicate potential non-convergence (reason = '",
+            diag_obj$reason, "').", call. = FALSE)
+  }
+
   summary_df <- data.frame(
     Mean   = apply(chain_theta, 2, mean),
     SD     = apply(chain_theta, 2, sd),
@@ -275,6 +291,7 @@ fitBayes <- function(x, dist, delta = NULL, prior = "Jeffreys",
     chain          = chain_theta,
     summary        = summary_df,
     acc.rate       = acc_rate,
+    diagnostics    = diag_obj,
     call           = match.call(),
     theta_mle      = theta_mle,
     Sigma_init_phi = Sigma_phi0

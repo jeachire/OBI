@@ -50,6 +50,8 @@ A list with the following elements:
 \item{chain}{Matrix of sampled parameter values after burn-in and thinning.}
 \item{summary}{Data frame with posterior mean, SD, median, and quantiles (2.5\\%, 25\\%, 75\\%, 97.5\\%).}
 \item{acc.rate}{Acceptance rate of the sampler.}
+\item{diagnostics}{List with simple convergence diagnostics.}
+\item{chain.full}{Full MCMC chain before burn-in and thinning.}
 \item{call}{The matched call.}
 }
 }
@@ -63,29 +65,4 @@ At each iteration, censored observations are imputed from the conditional
 distribution of the failure time given censoring. The sampler then performs
 a Metropolis-Hastings step using the imputed dataset. The Jacobian adjustment
 for positive parameters is automatically included.
-}
-\examples{
-# Simulated censored data (Weibull; parameterization = (rate, shape))
-set.seed(123)
-n <- 30
-shape <- 2; rate <- 1
-t.true <- rweibull(n, shape = shape, scale = 1/rate)
-censor.limit <- 1.2
-x <- pmin(t.true, censor.limit)
-delta <- as.integer(t.true <= censor.limit)
-
-# Log-posterior (up to a constant) in (rate, shape)
-logPost <- function(theta, t.imp){
-  rate  <- theta[1]; shape <- theta[2]
-  scale <- 1 / rate
-  sum(dweibull(t.imp, shape = shape, scale = scale, log = TRUE))
-}
-
-out <- censoredRWmcmc(
-  x = x, delta = delta, dist = "weibull",
-  logPost = logPost, theta.init = c(rate = 1, shape = 2),
-  positive = c(TRUE, TRUE), n.iter = 2000
-)
-str(out$summary)
-
 }
