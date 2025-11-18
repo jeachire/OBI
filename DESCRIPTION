@@ -20,7 +20,8 @@ RoxygenNote: 7.3.2
 Depends: R (>= 4.0)
 Imports: 
     MASS,
-    stats
+    stats,
+    coda
 Suggests: 
     knitr,
     rmarkdown,
