@@ -228,12 +228,18 @@ fitBayes <- function(x, dist, delta = NULL, prior = "Jeffreys",
     ll + lp
   }
 
-  # (b) Target on PHI (if you want to sample directly in phi): add Jacobian
-  logPost_phi <- function(phi) {
-    theta <- from_phi(phi)
-    ll <- loglik_fun(theta); lp <- prior_fun_log(theta)
+  # (b) log-posterior en theta usando los datos imputados t.imp
+
+  logPost_theta_with_timp <- function(theta, t.imp) {
+    ll_fun <- getLogLikelihood(
+      dist  = dist,
+      x     = t.imp,
+      delta = rep(1L, length(t.imp))
+    )
+    ll <- ll_fun(theta)
+    lp <- prior_fun_log(theta)
     if (!is.finite(ll) || !is.finite(lp)) return(-Inf)
-    ll + lp + logJ_phi(phi)
+    ll + lp
   }
 
   ## ---------- 5) Run sampler ----------
