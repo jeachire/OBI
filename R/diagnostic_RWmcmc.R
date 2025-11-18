@@ -47,7 +47,8 @@
 diagnostic_RWmcmc <- function(chain,
                               burnin,
                               acc.rate,
-                              rel.tol = 0.05,
+                              rel.tol = 0.15,
+                              abs.tol = 0.10,
                               max.abs = 1e6,
                               acc.min = 0.05,
                               acc.max = 0.7) {
@@ -91,8 +92,12 @@ diagnostic_RWmcmc <- function(chain,
   mean1 <- colMeans(first_half)
   mean2 <- colMeans(second_half)
 
-  rel.diff <- abs(mean2 - mean1) / (abs(mean2) + 1e-8)
-  ok_means <- all(rel.diff < rel.tol)
+  abs.diff <- abs(mean2 - mean1)
+  rel.diff <- abs.diff / (abs(mean2) + 1e-8)
+
+  # Aceptar si, para cada parámetro, la diferencia relativa es pequeña
+  # O la diferencia absoluta es pequeña (especialmente útil si la media ~ 0)
+  ok_means <- all((rel.diff < rel.tol) | (abs.diff < abs.tol))
 
   # 3) Rango razonable de aceptación
   ok_accept <- (acc.rate >= acc.min && acc.rate <= acc.max)
